@@ -1,41 +1,49 @@
 package playlist
 
 import (
-	"github.com/gofiber/fiber/v2"
+	// External packages
+	"github.com/gofiber/fiber/v2" // For HTTP context and JSON response maps
 
-	"turbo-iptv-api/internal/model"
+	// Internal packages
+	"turbo-iptv-api/internal/model" // For content type constants and session entry model
 )
 
+// ConnectParams struct for pagination and filtering options when browsing playlist content
 type ConnectParams struct {
-	Page        int
-	Limit       int
-	Search      string
-	Category    string
-	ContentType string
+	Page        int    // Page number (1-based)
+	Limit       int    // Items per page
+	Search      string // Optional search term for name/category
+	Category    string // Optional exact category filter
+	ContentType string // Content type: live, movie or series
 }
 
+// ConnectResponse function to download, parse, store and return the first page of a playlist connection
 func ConnectResponse(
 	store *Store,
 	playlistURL, playlistType string,
 	params ConnectParams,
 	extra fiber.Map,
 ) (fiber.Map, error) {
+	// Download remote M3U content
 	content, err := FetchM3U(playlistURL)
 	if err != nil {
 		return nil, err
 	}
 
+	// Parse M3U text into flat channel list
 	channels := ParseM3U(content)
 	if len(channels) == 0 {
 		return nil, fiber.NewError(fiber.StatusNotFound, "Nenhum canal encontrado na playlist")
 	}
 
+	// Persist parsed content in memory and obtain a session ID
 	sessionID, entry := store.Save(channels)
 	contentType := params.ContentType
 	if contentType == "" {
 		contentType = model.ContentLive
 	}
 
+	// Build base connect response shared by all content types
 	response := fiber.Map{
 		"type":        playlistType,
 		"status":      "conectado",
@@ -46,6 +54,7 @@ func ConnectResponse(
 		"limit":       params.Limit,
 	}
 
+	// Attach paginated content and categories for the requested type
 	if contentType == model.ContentSeries {
 		slice, total := PaginateSeries(entry.Series, params.Page, params.Limit, params.Search, params.Category)
 		response["total"] = total
@@ -59,6 +68,7 @@ func ConnectResponse(
 		response["channels"] = slice
 	}
 
+	// Merge optional extra fields (saved playlist info, username, etc.)
 	for key, value := range extra {
 		response[key] = value
 	}
@@ -66,6 +76,7 @@ func ConnectResponse(
 	return response, nil
 }
 
+// PageResponse function to paginate content from an existing in-memory playlist session
 func PageResponse(entry model.Entry, params ConnectParams) fiber.Map {
 	contentType := params.ContentType
 	if contentType == "" {
@@ -93,6 +104,7 @@ func PageResponse(entry model.Entry, params ConnectParams) fiber.Map {
 	}
 }
 
+// ConnectParamsFromCtx function to read pagination and filter query params from a Fiber request
 func ConnectParamsFromCtx(c *fiber.Ctx) ConnectParams {
 	contentType := c.Query("type", model.ContentLive)
 	return ConnectParams{

@@ -1,18 +1,23 @@
 package playlist
 
 import (
-	"regexp"
-	"sort"
-	"strconv"
-	"strings"
+	// Standard packages
+	"regexp"  // For parsing season/episode suffixes in channel names
+	"sort"    // For ordering episodes within a series
+	"strconv" // For converting season and episode numbers
+	"strings" // For string manipulation
 
-	"github.com/gofiber/fiber/v2"
+	// External packages
+	"github.com/gofiber/fiber/v2" // For totals response map
 
-	"turbo-iptv-api/internal/model"
+	// Internal packages
+	"turbo-iptv-api/internal/model" // For channel, series and content type models
 )
 
+// Regex pattern for trailing season/episode suffixes such as " S01 E03"
 var episodeSuffixRegex = regexp.MustCompile(`(?i)\s+S(\d+)\s*E(\d+)\s*$`)
 
+// ParseEpisodeInfo function to split a channel name into series title, season and episode
 func ParseEpisodeInfo(name string) (seriesName string, season, episode int) {
 	match := episodeSuffixRegex.FindStringSubmatch(name)
 	if len(match) == 3 {
@@ -24,15 +29,18 @@ func ParseEpisodeInfo(name string) (seriesName string, season, episode int) {
 	return name, 0, 0
 }
 
+// GroupIntoSeries function to group flat series-type channels into series with ordered episodes
 func GroupIntoSeries(channels []model.Channel) []model.SeriesItem {
 	groups := make(map[string]*model.SeriesItem)
 	order := make([]string, 0)
 
 	for _, channel := range channels {
+		// Only series-type channels participate in grouping
 		if channel.Type != model.ContentSeries {
 			continue
 		}
 
+		// Example: "Breaking Bad S01 E03" → seriesName, season, episode
 		seriesName, season, episodeNum := ParseEpisodeInfo(channel.Name)
 		key := strings.ToLower(seriesName)
 
@@ -49,6 +57,7 @@ func GroupIntoSeries(channels []model.Channel) []model.SeriesItem {
 			order = append(order, key)
 		}
 
+		// Prefer the first non-empty logo found for the series
 		if item.Logo == "" && channel.Logo != "" {
 			item.Logo = channel.Logo
 		}
@@ -62,6 +71,7 @@ func GroupIntoSeries(channels []model.Channel) []model.SeriesItem {
 		})
 	}
 
+	// Preserve first-seen order and sort episodes inside each series
 	result := make([]model.SeriesItem, 0, len(order))
 	for _, key := range order {
 		item := groups[key]
@@ -78,6 +88,7 @@ func GroupIntoSeries(channels []model.Channel) []model.SeriesItem {
 	return result
 }
 
+// ExtractSeriesCategories function to collect unique non-empty categories from grouped series
 func ExtractSeriesCategories(series []model.SeriesItem) []string {
 	seen := make(map[string]struct{})
 	categories := make([]string, 0)
@@ -96,6 +107,7 @@ func ExtractSeriesCategories(series []model.SeriesItem) []string {
 	return categories
 }
 
+// FilterSeries function to filter grouped series by category and/or search term
 func FilterSeries(series []model.SeriesItem, search, category string) []model.SeriesItem {
 	filtered := series
 
@@ -124,6 +136,7 @@ func FilterSeries(series []model.SeriesItem, search, category string) []model.Se
 	return filtered
 }
 
+// PaginateSeries function to filter and paginate grouped series results
 func PaginateSeries(series []model.SeriesItem, page, limit int, search, category string) ([]model.SeriesItem, int) {
 	if limit <= 0 {
 		limit = 100
@@ -147,6 +160,7 @@ func PaginateSeries(series []model.SeriesItem, page, limit int, search, category
 	return filtered[start:end], total
 }
 
+// FilterChannels function to filter flat channels by type, category and/or search term
 func FilterChannels(channels []model.Channel, search, category, contentType string) []model.Channel {
 	filtered := channels
 
@@ -185,6 +199,7 @@ func FilterChannels(channels []model.Channel, search, category, contentType stri
 	return filtered
 }
 
+// PaginateChannels function to filter and paginate flat channel results
 func PaginateChannels(channels []model.Channel, page, limit int, search, category, contentType string) ([]model.Channel, int) {
 	if limit <= 0 {
 		limit = 100
@@ -208,6 +223,7 @@ func PaginateChannels(channels []model.Channel, page, limit int, search, categor
 	return filtered[start:end], total
 }
 
+// CountByType function to build live/movie/series totals for connect responses
 func CountByType(channels []model.Channel, series []model.SeriesItem) fiber.Map {
 	counts := map[string]int{
 		model.ContentLive:  0,
